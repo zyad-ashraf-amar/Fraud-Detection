@@ -1,0 +1,6 @@
+1- Predict stock prices using historical data
+2- Anomaly detection (fraud detection)
+3- custom churn 
+4- analysis of supermarket data
+5- analysis of corona data
+6- Build a movie recommendation system
