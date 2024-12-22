@@ -3144,9 +3144,9 @@ def scale_data(x_train: Union[np.ndarray, pd.DataFrame],
         
         if x_valid is not None:
             x_valid_scaled = scaler.transform(x_valid)
-            return x_train_scaled, x_test_scaled, x_valid_scaled
+            return x_train_scaled, x_test_scaled, x_valid_scaled, scaler
         else:
-            return x_train_scaled, x_test_scaled
+            return x_train_scaled, x_test_scaled, scaler
     
     except Exception as e:
         raise ValueError(f"An error occurred while scaling the data: {e}")
@@ -3780,7 +3780,7 @@ def grid_search_classifier_with_progress(
     return best_params, best_score, best_estimator
 
 
-def grid_search_regressor(
+def grid_search_regression(
         model_name: Literal['LinearRegression', 'Ridge', 'Lasso', 'ElasticNet', 'KNN', 'SVR', 
                             'DecisionTree', 'RandomForest', 'GradientBoosting', 'XGBoost', 
                             'ExtraTrees', 'Bagging', 'AdaBoost', 'Stacking'],
@@ -4379,7 +4379,7 @@ def random_search_classifier(
     return best_params, best_score, best_estimator
 
 
-def random_search_regressor(model_name: Literal['LinearRegression', 'Ridge', 'Lasso', 'ElasticNet', 'KNN', 'SVR', 
+def random_search_regression(model_name: Literal['LinearRegression', 'Ridge', 'Lasso', 'ElasticNet', 'KNN', 'SVR', 
                             'DecisionTree', 'RandomForest', 'GradientBoosting', 'XGBoost', 
                             'ExtraTrees', 'Bagging', 'AdaBoost', 'Stacking'],
                             X_train: np.ndarray, 
@@ -4818,7 +4818,7 @@ def get_classifier(
     return model
 
 
-def get_regressor(
+def get_regression(
     model_name: Literal[
         'linear_regression', 'ridge_regression', 'lasso_regression', 'elasticnet_regression',
         'kneighbors_regressor', 'svr', 'decision_tree_regressor', 'random_forest_regressor',
@@ -4898,7 +4898,7 @@ def get_regressor(
     return model
 
 
-def Check_Overfitting_Classification(
+def check_overfitting_classification(
     model,
     x: np.ndarray,
     y: np.ndarray,
@@ -4907,7 +4907,7 @@ def Check_Overfitting_Classification(
     x_valid: np.ndarray,
     y_valid: np.ndarray,
     learning_curve_scoring: Literal['accuracy', 'precision', 'recall', 'f1', 'roc_auc'] = 'accuracy',
-    cv_type: Literal['KFold', 'StratifiedKFold', 'LeaveOneOut', 'LeavePOut', 'RepeatedKFold', 'TimeSeriesSplit'] = 'KFold',
+    cv_type: Literal['KFold', 'StratifiedKFold', 'LeaveOneOut', 'LeavePOut', 'RepeatedKFold', 'TimeSeriesSplit'] = 'StratifiedKFold',
     cv: int = 5,
     cv_scoring: Literal['accuracy', 'precision', 'recall', 'f1', 'roc_auc'] = 'accuracy',
     shuffle: bool = True,
@@ -5104,7 +5104,7 @@ def Check_Overfitting_Classification(
     # return results
 
 
-def Check_Overfitting_Regression(
+def check_overfitting_regression(
     model,
     x: np.ndarray,
     y: np.ndarray,
@@ -5160,9 +5160,13 @@ def Check_Overfitting_Regression(
     if learning_curve_scoring in ['neg_mean_squared_error', 'neg_mean_absolute_error']:
         train_scores_mean = -np.mean(train_scores, axis=1)
         valid_scores_mean = -np.mean(valid_scores, axis=1)
+        train_scores_std = -np.std(train_scores, axis=1)
+        valid_scores_std = -np.std(valid_scores, axis=1)
     else:
         train_scores_mean = np.mean(train_scores, axis=1)
         valid_scores_mean = np.mean(valid_scores, axis=1)
+        train_scores_std = np.std(train_scores, axis=1)
+        valid_scores_std = np.std(valid_scores, axis=1)
     
     
     # # Compute the learning curves
@@ -5205,13 +5209,16 @@ def Check_Overfitting_Regression(
 
     if plot:
         plt.figure()
-        plt.plot(train_sizes, train_scores_mean, label='Training Score')
-        plt.plot(train_sizes, valid_scores_mean, label='Validation Score')
+        plt.plot(train_sizes, train_scores_mean, "r-+", label='Training Score')
+        plt.plot(train_sizes, valid_scores_mean, "b-*", label='Validation Score')
+        plt.fill_between(train_sizes, train_scores_mean - train_scores_std, train_scores_mean + train_scores_std, color='r', alpha=0.25)
+        plt.fill_between(train_sizes, valid_scores_mean - valid_scores_std, valid_scores_mean + valid_scores_std, color='b', alpha=0.25)
         plt.xlabel('Training Size')
         plt.ylabel('Score')
         plt.title('Learning Curve')
         plt.legend()
         plt.show()
+        
         
         # # Plot the learning curves
         # plt.figure(figsize=(10, 6))
@@ -5295,7 +5302,7 @@ def plot_confusion_matrix(y_test, y_pred):
     plt.show()
 
 
-def evaluate_model_Classification(y_test, y_pred):
+def evaluate_model_classification(y_test, y_pred):
     """
     Evaluates a classification model and plots the ROC curve.
 
@@ -5507,26 +5514,164 @@ def plots_evaluate_models(
     plt.show()
 
 
+def plots_evaluate_models_regression(
+    models_values, 
+    models_names=None, 
+    evaluate_names=None,
+    have_overfitting=None,
+    metrics_type='regression',
+    palette='magma',
+    title='Model Performance Across Different Metrics',
+    xlabel='',
+    ylabel='',
+    width=0.75,
+    edgecolor='black',
+    linewidth=1.5,
+    hatches=None,
+    hatch=False,
+    figsize=(18, 6),
+    annote_num=3
+):
+    """
+    Create an enhanced grouped bar plot of model performance metrics.
+    """
+    # Prepare data
+    num_models = len(models_values)
+    num_metrics = len(models_values[0])
+    
+    if models_names is None:
+        models_names = [f'Model {i+1}' for i in range(num_models)]
+    
+    if evaluate_names is None:
+        evaluate_names = [f'Metric {i+1}' for i in range(num_metrics)]
+    
+    # Ensure have_overfitting is the correct length
+    if have_overfitting is None:
+        have_overfitting = [0] * num_models
+    else:
+        have_overfitting = list(have_overfitting)[:num_models]
+        have_overfitting.extend([0] * (num_models - len(have_overfitting)))
+    
+    # Create DataFrame
+    df = pd.DataFrame(models_values, columns=evaluate_names)
+    df['Model'] = models_names
+    
+    if metrics_type == 'regression':
+        # Create normalized values for visualization
+        df_normalized = df.copy()
+        for col in evaluate_names:
+            metric_name = col.lower()
+            if 'r2' in metric_name or 'r²' in metric_name:
+                # For R², higher is better, normalize directly
+                df_normalized[col] = (df[col] - df[col].min()) / (df[col].max() - df[col].min())
+            else:
+                # For error metrics (MSE, RMSE, MAE), lower is better, normalize and invert
+                df_normalized[col] = 1 - (df[col] - df[col].min()) / (df[col].max() - df[col].min())
+    else:
+        df_normalized = df.copy()
+    
+    # Melt the DataFrames
+    df_melted = df.melt(id_vars='Model', var_name='Metric', value_name='Value')
+    df_normalized_melted = df_normalized.melt(id_vars='Model', var_name='Metric', value_name='Normalized_Value')
+    
+    # Set up the plot
+    plt.figure(figsize=figsize)
+    
+    # Prepare hatches
+    if hatch and not hatches:
+        hatches_list = random.sample(['X', 'oo', 'O|', '/', '+', '++', '--', '-\\', 'xx', '*-', '\\\\', '|*', '\\', 'OO', 'o', '**', 'o-', '*', '//', '||', '+o', '..', '/o', 'O.', '\\|', 'x*', '|', '-', None], len(evaluate_names))
+    else:
+        hatches_list = hatches
+    
+    # Create the plot using normalized values for the bar heights
+    ax = sns.barplot(
+        data=df_normalized_melted if metrics_type == 'regression' else df_melted, 
+        x='Model', 
+        y='Normalized_Value' if metrics_type == 'regression' else 'Value', 
+        hue='Metric', 
+        palette=palette, 
+        errorbar=None, 
+        width=width
+    )
+    
+    # Customize bar edges
+    for bar in ax.patches:
+        bar.set_edgecolor(edgecolor)
+        bar.set_linewidth(linewidth)
+    
+    # Add hatches
+    if hatch and hatches_list:
+        for i, bar_group in enumerate(ax.patches):
+            hatch_pattern = hatches_list[i % len(hatches_list)]
+            bar_group.set_hatch(hatch_pattern)
+    
+    # Add value labels
+    bars = ax.patches
+    num_bars = len(bars)
+    for idx, (bar, value) in enumerate(zip(bars, df_melted['Value'])):
+        ax.annotate(
+            format(value, f'.{annote_num}f'),
+            xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+            xytext=(0, 5),
+            textcoords='offset points',
+            ha='center',
+            va='bottom',
+            fontweight='bold'
+        )
+    
+    # Customize X-axis text colors and size
+    x_labels = ax.get_xticklabels()
+    for idx, label in enumerate(x_labels):
+        color = 'black'
+        if have_overfitting[idx] >= 1:
+            color = 'green'
+        elif have_overfitting[idx] <= -1:
+            color = 'red'
+        label.set_color(color)
+        label.set_fontsize(12)
+        label.set_fontweight('bold')
+    
+    # Customize plot
+    plt.title(title, fontsize=16, fontweight='bold')
+    plt.xlabel(xlabel, fontweight='bold', fontsize=16)
+    plt.ylabel(ylabel, fontweight='bold', fontsize=16)
+    
+    # Adjust y-axis based on metric type
+    if metrics_type == 'regression':
+        plt.yticks(np.arange(0, 1.1, 0.1), fontweight='bold')
+    else:
+        plt.yticks(fontweight='bold')
+    
+    plt.legend(title='Metrics', title_fontsize=16, fontsize=14, bbox_to_anchor=(1, 1), loc='best')
+    plt.grid(True, linestyle='--', axis='y', linewidth=0.6, alpha=0.85)
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    
+    plt.show()
+
+
 def plot_model_performance(
     models_values, 
     models_names, 
     evaluate_names, 
-    have_overfitting, 
+    have_overfitting,
+    metrics_type='classification',  # 'classification' or 'regression'
     cmap='YlGnBu',
     title='Model Performance Metrics',
     xlabel='',
     ylabel='',
     figsize=(14, 7),
-    x_rotation = 45
+    x_rotation=45
 ):
     """
-    Create a heatmap-style visualization of model performance metrics.
+    Create a heatmap visualization of model performance metrics using seaborn.
     
     Parameters:
     - models_values: 2D list of performance values 
     - models_names: List of model names
     - evaluate_names: List of metric names
     - have_overfitting: List indicating overfitting status for each model
+    - metrics_type: 'classification' or 'regression' to handle different metric types
     - Additional styling parameters for title, labels, and size.
     """
     # Convert to numpy array for easier manipulation
@@ -5540,41 +5685,70 @@ def plot_model_performance(
     # Create the figure and axis
     plt.figure(figsize=figsize)
 
-    # Create heatmap
-    im = plt.imshow(values, cmap=cmap, aspect='auto')
-
-    # Add colorbar
-    cbar = plt.colorbar(im)
-    cbar.ax.set_ylabel('Performance Score', fontweight='bold')
-
-    # Set x and y ticks
-    plt.xticks(np.arange(len(evaluate_names)), evaluate_names, rotation=x_rotation, fontweight='bold', fontsize=14) # ha='right'
-    plt.yticks(np.arange(len(models_names)), models_names, fontweight='bold', fontsize=14)
-
-    # Annotate each cell with its value
-    for i in range(len(models_names)):
-        for j in range(len(evaluate_names)):
-            # Determine text color based on overfitting status
-            if have_overfitting[i] == 0:
-                text_color = 'black'
-            elif have_overfitting[i] == -1:
-                text_color = 'red'
-            else:  # have_overfitting[i] == 1
-                text_color = 'green'
+    if metrics_type == 'regression':
+        # Create separate normalized matrices for visualization
+        normalized_values = np.zeros_like(values, dtype=float)
+        
+        for j in range(values.shape[1]):
+            metric_name = evaluate_names[j].lower()
             
-            # Add text annotation
-            plt.text(
-                j, i, f'{values[i, j]:.3f}', 
-                ha='center', va='center', 
-                color=text_color, 
-                fontweight='bold', 
-                fontsize=10
-            )
+            if 'r2' in metric_name or 'r²' in metric_name:
+                # For R², higher is better, normalize directly
+                normalized_values[:, j] = (values[:, j] - np.min(values[:, j])) / \
+                                        (np.max(values[:, j]) - np.min(values[:, j]))
+            else:
+                # For MSE, RMSE, MAE, etc., lower is better, normalize and invert
+                normalized_values[:, j] = 1 - (values[:, j] - np.min(values[:, j])) / \
+                                        (np.max(values[:, j]) - np.min(values[:, j]))
+        
+        # Create heatmap using normalized values for colors but show original values
+        ax = sns.heatmap(normalized_values,
+                        annot=values,  # Show original values
+                        cmap=cmap,
+                        xticklabels=evaluate_names,
+                        yticklabels=models_names,
+                        fmt='.3f',
+                        cbar_kws={'label': 'Normalized Score'})
+    else:
+        # Classification metrics (original behavior)
+        ax = sns.heatmap(values, 
+                        annot=True, 
+                        cmap=cmap,
+                        xticklabels=evaluate_names,
+                        yticklabels=models_names,
+                        fmt='.3f',
+                        cbar_kws={'label': 'Performance Score'})
 
+    # Customize annotations
+    for text in ax.texts:
+        text.set_weight('bold')
+        text.set_fontsize(15)
+
+    # Color-code y-axis labels based on overfitting status
+    y_tick_labels = ax.get_yticklabels()
+    for idx, label in enumerate(y_tick_labels):
+        if have_overfitting[idx] == -1:
+            label.set_color('red')
+        elif have_overfitting[idx] == 1:
+            label.set_color('green')
+        else:
+            label.set_color('black')
+        label.set_fontweight('bold')
+        label.set_fontsize(14)
+    
     # Customize plot
     plt.title(title, fontweight='bold', fontsize=18)
     plt.xlabel(xlabel, fontweight='bold', fontsize=16)
     plt.ylabel(ylabel, fontweight='bold', fontsize=16)
+    
+    # Rotate axis labels
+    plt.xticks(rotation=x_rotation)
+    plt.yticks(rotation=0)
+    
+    # Make x-axis labels bold
+    ax.set_xticklabels(ax.get_xticklabels(), fontweight='bold', fontsize=14)
+
+    # Adjust layout
     plt.tight_layout()
 
     # Show the plot
